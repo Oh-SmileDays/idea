@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>모션 그래픽</title>
+<style>
+*{box-sizing:border-box;margin:0}
+html,body{width:1280px;height:720px;overflow:hidden;background:#0b0e1c;font-family:"WenQuanYi Zen Hei","Noto Sans KR",sans-serif;color:#fff}
+.sc{position:absolute;inset:0;opacity:0}
+.c{position:absolute;left:0;right:0;text-align:center}
+.grad{background:linear-gradient(90deg,#818cf8,#38bdf8,#4ade80);-webkit-background-clip:text;background-clip:text;color:transparent}
+#bars{position:absolute;left:290px;top:130px;width:700px;height:420px;display:flex;align-items:flex-end;gap:40px;border-bottom:3px solid #394067}
+.b{flex:1;border-radius:12px 12px 0 0;position:relative;height:0}
+.b span{position:absolute;top:-44px;left:0;right:0;text-align:center;font-size:30px;font-variant-numeric:tabular-nums}
+.b em{position:absolute;bottom:-46px;left:0;right:0;text-align:center;font-style:normal;color:#9aa1c8;font-size:26px}
+.ring{position:absolute;left:490px;top:180px}
+</style></head><body>
+<!-- 장면 1: 타이틀 / 2: 카운트업 / 3: 막대 차트 / 4: 로고 스팅 -->
+<div class="sc" id="s1"><div class="c grad" id="t1" style="top:250px;font-size:120px;font-weight:700">오늘의 3가지</div>
+  <div class="c" id="t2" style="top:410px;font-size:40px;color:#aab0d8">꼭 해야 할 일만 남기세요</div>
+  <div id="ln" style="position:absolute;left:640px;top:390px;height:4px;background:#818cf8;transform:translateX(-50%)"></div></div>
+<div class="sc" id="s2"><svg class="ring" width="300" height="300" viewBox="0 0 300 300"><circle cx="150" cy="150" r="130" fill="none" stroke="#252a4a" stroke-width="22"/>
+  <circle id="arc" cx="150" cy="150" r="130" fill="none" stroke="#4ade80" stroke-width="22" stroke-linecap="round" transform="rotate(-90 150 150)" stroke-dasharray="817" stroke-dashoffset="817"/></svg>
+  <div class="c" id="num" style="top:260px;font-size:104px;font-weight:700;font-variant-numeric:tabular-nums"></div>
+  <div class="c" style="top:560px;font-size:36px;color:#aab0d8">오늘 달성률</div></div>
+<div class="sc" id="s3"><div id="bars"></div><div class="c" style="top:50px;font-size:40px;color:#aab0d8">요일별 완료한 할 일</div></div>
+<div class="sc" id="s4"><div class="c" id="lg" style="top:230px;font-size:130px">🤖</div>
+  <div class="c grad" id="lt" style="top:420px;font-size:84px;font-weight:700;letter-spacing:.05em">살아있는 비서</div>
+  <div id="flash" style="position:absolute;inset:0;background:#fff;opacity:0"></div></div>
+<script>
+const FPS=24, DUR=12;
+const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
+const ease=x=>1-Math.pow(1-clamp(x),3);
+const io=x=>{x=clamp(x);return x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2};
+const back=x=>{x=clamp(x);const c=1.70158;return 1+(c+1)*Math.pow(x-1,3)+c*Math.pow(x-1,2)};
+const $=id=>document.getElementById(id);
+const days=[['월',3],['화',5],['수',2],['목',6],['금',4]];
+$('bars').innerHTML=days.map(([d,v],i)=>`<div class="b" data-v="${v}" style="background:hsl(${230-i*18} 80% 66%)"><span></span><em>${d}</em></div>`).join('');
+const bars=[...document.querySelectorAll('.b')];
+const T=[0,3,6.5,9.5,12]; // 장면 경계(초)
+const fade=(el,t,a,b)=>{el.style.opacity=Math.min(ease((t-a)/.3),clamp((b-t)/.3))};
+
+window.DURATION=DUR;window.FPS=FPS;
+window.setT=t=>{
+  fade($('s1'),t,T[0]-.3,T[1]);fade($('s2'),t,T[1],T[2]);fade($('s3'),t,T[2],T[3]);fade($('s4'),t,T[3],T[4]+1);
+  // 1) 타이틀
+  let s=t-T[0];
+  $('t1').style.transform=`scale(${.7+.3*back(s/.8)}) `;$('t1').style.opacity=clamp(s/.5);
+  $('t2').style.opacity=clamp((s-.9)/.5);$('t2').style.transform=`translateY(${(1-ease((s-.9)/.5))*20}px)`;
+  $('ln').style.width=(ease((s-.4)/.8)*620)+'px';
+  // 2) 카운트업 + 링
+  s=t-T[1];const k=ease(s/2);
+  $('num').textContent=Math.round(87*k)+'%';$('arc').style.strokeDashoffset=817*(1-.87*k);
+  // 3) 막대
+  s=t-T[2];
+  bars.forEach((b,i)=>{const kk=ease((s-.2-i*.15)/.8);b.style.height=(kk*b.dataset.v/6*380)+'px';b.firstElementChild.textContent=Math.round(kk*b.dataset.v)})
+  // 4) 로고 스팅
+  s=t-T[3];
+  $('lg').style.transform=`scale(${.2+.8*back(s/.7)}) rotate(${(1-ease(s/.7))*-90}deg)`;$('lg').style.opacity=clamp(s/.3);
+  $('lt').style.opacity=clamp((s-.5)/.4);$('lt').style.letterSpacing=(0.4-.35*ease((s-.5)/.9))+'em';
+  $('flash').style.opacity=clamp(1-Math.abs(s-.35)/.15)*.8;
+};
+setT(0);
+</script></body></html>

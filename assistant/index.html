@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>살아있는 비서</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--ink:#1b1f2a;--mute:#6b7285;--line:#e4e7ef;--acc:#4f46e5;--ok:#16a34a;--warn:#f59e0b;--bad:#dc2626}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1117;--card:#181b24;--ink:#eef0f6;--mute:#9aa1b5;--line:#272b38;--acc:#818cf8;--ok:#4ade80;--warn:#fbbf24;--bad:#f87171}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Noto Sans KR","Malgun Gothic",sans-serif}
+main{max-width:640px;margin:0 auto;padding:20px 16px 60px}
+header{display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
+h1{font-size:22px;margin:0}
+.clock{font-variant-numeric:tabular-nums;color:var(--mute);text-align:right;font-size:14px}
+.clock b{display:block;font-size:26px;color:var(--ink)}
+.bot{display:flex;gap:12px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin:16px 0}
+.avatar{flex:none;width:44px;height:44px;border-radius:50%;background:var(--acc);display:grid;place-items:center;font-size:22px;animation:breathe 3s ease-in-out infinite}
+@keyframes breathe{50%{transform:scale(1.07);box-shadow:0 0 0 8px color-mix(in srgb,var(--acc) 18%,transparent)}}
+.bot p{margin:0}.bot small{color:var(--mute)}
+.prog{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+.bar{flex:1;height:12px;background:var(--line);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--ok);transition:width .5s}
+.pct{font-weight:700;font-variant-numeric:tabular-nums;min-width:48px;text-align:right}
+form{display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-bottom:8px}
+input,select,button{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+button{cursor:pointer;background:var(--acc);color:#fff;border:0;font-weight:600}
+.hint{color:var(--mute);font-size:13px;margin:0 0 16px}
+h2{font-size:14px;color:var(--mute);margin:20px 0 8px;letter-spacing:.02em}
+ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+li{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+li.must{border-left:4px solid var(--acc)}
+li.late:not(.done){border-color:var(--bad)}
+li input[type=checkbox]{width:22px;height:22px;accent-color:var(--ok);flex:none}
+li .t{flex:1;min-width:0;overflow-wrap:anywhere}
+li.done .t{text-decoration:line-through;color:var(--mute)}
+li time{font-size:13px;color:var(--mute);font-variant-numeric:tabular-nums}
+li.late:not(.done) time{color:var(--bad);font-weight:700}
+li .x{background:none;color:var(--mute);padding:4px 8px;font-size:18px}
+.empty{color:var(--mute);text-align:center;padding:16px}
+footer{margin-top:28px;display:flex;justify-content:space-between;color:var(--mute);font-size:13px}
+footer button{background:none;color:var(--mute);border:1px solid var(--line);padding:6px 10px;font-weight:400}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>살아있는 비서</h1><div id="date" style="color:var(--mute)"></div></div>
+    <div class="clock"><b id="now"></b><span id="left"></span></div>
+  </header>
+
+  <section class="bot" aria-live="polite">
+    <div class="avatar">🤖</div>
+    <div><p id="say"></p><small id="sub"></small></div>
+  </section>
+
+  <div class="prog"><div class="bar"><i id="fill"></i></div><span class="pct" id="pct">0%</span></div>
+
+  <form id="f">
+    <input id="txt" placeholder="오늘 할 일을 적어요" maxlength="80" required autocomplete="off">
+    <input id="due" type="time" aria-label="마감 시각">
+    <button>추가</button>
+  </form>
+  <p class="hint">처음 3개는 <b>꼭 해야 할 일</b>로 고정돼요. 나머지는 여유가 되면 하는 일이에요. 마감 시각이 지나면 비서가 알려줘요.</p>
+
+  <h2>꼭 해야 할 일 (최대 3)</h2><ul id="must"></ul>
+  <h2>여유 되면</h2><ul id="more"></ul>
+
+  <footer><span id="stat"></span><button id="clear" type="button">완료 항목 지우기</button></footer>
+</main>
+
+<script>
+const KEY='assistant-v1', MUST_MAX=3;
+const $=id=>document.getElementById(id);
+const today=()=>new Date().toLocaleDateString('sv');
+const pad=n=>String(n).padStart(2,'0');
+let state=load();
+
+function load(){
+  try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.day===today())return s}catch(e){}
+  // 새 날이 되면 어제 못 끝낸 꼭-할-일은 이월한다
+  let carry=[];
+  try{const o=JSON.parse(localStorage.getItem(KEY));if(o)carry=o.items.filter(i=>!i.done).map(i=>({...i,due:'',carried:true}))}catch(e){}
+  return {day:today(),items:carry,created:Date.now()};
+}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}}
+function dueMs(i){if(!i.due)return null;const [h,m]=i.due.split(':');const d=new Date();d.setHours(+h,+m,0,0);return d.getTime()}
+function isLate(i){const d=dueMs(i);return d!==null&&!i.done&&Date.now()>d}
+
+$('f').onsubmit=e=>{
+  e.preventDefault();
+  state.items.push({id:crypto.randomUUID(),text:$('txt').value.trim(),due:$('due').value,done:false});
+  $('txt').value='';$('due').value='';save();render();
+};
+$('clear').onclick=()=>{state.items=state.items.filter(i=>!i.done);save();render()};
+
+function row(i,isMust){
+  const li=document.createElement('li');
+  li.className=(isMust?'must ':'')+(i.done?'done ':'')+(isLate(i)?'late':'');
+  const cb=Object.assign(document.createElement('input'),{type:'checkbox',checked:i.done});
+  cb.setAttribute('aria-label',i.text+' 완료');
+  cb.onchange=()=>{i.done=cb.checked;i.doneAt=i.done?Date.now():null;save();render()};
+  const t=document.createElement('span');t.className='t';t.textContent=(i.carried?'↪ ':'')+i.text;
+  li.append(cb,t);
+  if(i.due){const tm=document.createElement('time');tm.textContent=i.due;li.append(tm)}
+  const x=document.createElement('button');x.className='x';x.textContent='×';x.setAttribute('aria-label','삭제');
+  x.onclick=()=>{state.items=state.items.filter(o=>o!==i);save();render()};
+  li.append(x);return li;
+}
+
+function render(){
+  const must=state.items.slice(0,MUST_MAX), more=state.items.slice(MUST_MAX);
+  $('must').replaceChildren(...(must.length?must.map(i=>row(i,true)):[Object.assign(document.createElement('li'),{className:'empty',textContent:'오늘 꼭 할 일 1~3개를 먼저 적어봐요.'})]));
+  $('more').replaceChildren(...more.map(i=>row(i,false)));
+  const total=must.length, done=must.filter(i=>i.done).length;
+  const pct=total?Math.round(done/total*100):0;
+  $('fill').style.width=pct+'%';$('pct').textContent=pct+'%';
+  const all=state.items.filter(i=>i.done).length;
+  $('stat').textContent=`전체 ${state.items.length}개 중 ${all}개 완료`;
+  speak(must,done);
+}
+
+function speak(must,done){
+  const now=new Date(), h=now.getHours();
+  const greet=h<6?'늦은 밤이에요':h<12?'좋은 아침이에요':h<18?'좋은 오후예요':'저녁이에요';
+  const late=state.items.filter(isLate);
+  const next=state.items.filter(i=>!i.done&&i.due&&!isLate(i)).sort((a,b)=>dueMs(a)-dueMs(b))[0];
+  let say,sub='';
+  if(!must.length){say=`${greet}! 오늘 꼭 해야 할 일 3가지만 정해볼까요?`;sub='작게 시작하면 끝까지 가요.'}
+  else if(done===must.length){say='🎉 꼭 할 일을 모두 끝냈어요! 오늘은 이미 성공한 하루예요.';sub='남은 건 보너스예요. 푹 쉬어도 좋아요.'}
+  else if(late.length){say=`⏰ "${late[0].text}" 마감이 지났어요. 지금 5분만 시작해볼까요?`;sub=`지연 ${late.length}건`}
+  else if(next){const m=Math.max(0,Math.round((dueMs(next)-now)/60000));say=`다음은 "${next.text}" — ${m>=60?Math.floor(m/60)+'시간 ':''}${m%60}분 남았어요.`;sub=`꼭 할 일 ${must.length-done}개 남음`}
+  else{say=`${greet}! 꼭 할 일 ${must.length-done}개가 남았어요. 가장 쉬운 것부터 해봐요.`;sub='체크할 때마다 진행률이 올라가요.'}
+  $('say').textContent=say;$('sub').textContent=sub;
+}
+
+function tick(){
+  const n=new Date();
+  $('now').textContent=`${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`;
+  $('date').textContent=n.toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'long'});
+  const end=new Date();end.setHours(23,59,59,0);
+  const m=Math.round((end-n)/60000);$('left').textContent=`오늘 ${Math.floor(m/60)}시간 ${m%60}분 남음`;
+  if(n.getSeconds()===0)render();            // 마감 상태·멘트를 분 단위로 갱신
+  if(state.day!==today()){state=load();save();render()}   // 자정이 지나면 새 날로 전환
+}
+render();tick();setInterval(tick,1000);
+</script>
+</body>
+</html>
